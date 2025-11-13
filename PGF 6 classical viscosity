@@ -1,0 +1,92 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.linalg import solve_banded
+
+# ------------------------------------------------------------
+# Numerical setup
+# ------------------------------------------------------------
+Nx = 600
+L = 2*np.pi
+x = np.linspace(0, L, Nx)
+dx = x[1] - x[0]
+
+dt = 0.0005
+steps = 1200
+
+nu = 0.01        # classical viscosity
+Gamma = 0.30     # MBT-5 curvature strength
+
+# ------------------------------------------------------------
+# Initial condition: sharp shock
+# ------------------------------------------------------------
+u0 = np.zeros(Nx)
+u0[x < np.pi] = 1.0   # left state = 1
+u0[x >= np.pi] = 0.0  # right state = 0
+
+u_base = u0.copy()
+u_visc = u0.copy()
+u_mbt  = u0.copy()
+
+# ------------------------------------------------------------
+# Derivative helpers
+# ------------------------------------------------------------
+def dudx(u):
+    du = np.zeros_like(u)
+    du[1:-1] = (u[2:] - u[:-2]) / (2*dx)
+    du[0]     = (u[1] - u[0]) / dx
+    du[-1]    = (u[-1] - u[-2]) / dx
+    return du
+
+def d2udx2(u):
+    d2 = np.zeros_like(u)
+    d2[1:-1] = (u[2:] - 2*u[1:-1] + u[:-2]) / (dx*dx)
+    d2[0]     = (u[1] - 2*u[0] + u[-1]) / (dx*dx)
+    d2[-1]    = (u[0] - 2*u[-1] + u[-2]) / (dx*dx)
+    return d2
+
+# ------------------------------------------------------------
+# Semi-implicit matrix for the MBT curvature solver
+# solves: (I - dt*Γ∂²) u^{n+1} = rhs
+# ------------------------------------------------------------
+main_diag = 1 + 2*Gamma*dt/(dx*dx)
+off_diag  = -Gamma*dt/(dx*dx)
+
+# banded matrix for scipy (superdiag, diag, subdiag)
+A = np.zeros((3, Nx))
+A[1] = main_diag
+A[0,1:] = off_diag
+A[2,:-1] = off_diag
+
+# ------------------------------------------------------------
+# Time stepping
+# ------------------------------------------------------------
+for n in range(steps):
+    # ---- Baseline (no viscosity) -> unstable ----
+    ux = dudx(u_base)
+    u_base = u_base - dt*(u_base * ux)
+
+    # ---- Classical viscosity ----
+    ux = dudx(u_visc)
+    uxx = d2udx2(u_visc)
+    u_visc = u_visc - dt*(u_visc * ux) + dt*nu*uxx
+
+    # ---- MBT-5 curvature (semi-implicit) ----
+    ux  = dudx(u_mbt)
+    rhs = u_mbt - dt*(u_mbt * ux)     # nonlinear part explicit
+    u_mbt = solve_banded((1,1), A, rhs)
+
+# ------------------------------------------------------------
+# Plotting results
+# ------------------------------------------------------------
+plt.figure(figsize=(12,5))
+plt.plot(x, u0, 'k:', label="Initial shock")
+plt.plot(x, u_base, 'r--', label="Baseline Burgers (unstable)")
+plt.plot(x, u_visc, 'b', label="Classic viscosity ν=0.01")
+plt.plot(x, u_mbt, 'g', label="MBT-5 curvature Γ=0.3")
+plt.title("Final Profiles — MBT-5 vs Classical Viscosity vs Baseline")
+plt.xlabel("x")
+plt.ylabel("u(x)")
+plt.legend()
+plt.grid(True)
+plt.tight_layout()
+plt.show()
