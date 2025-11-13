@@ -1,0 +1,73 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+# ===========================================================
+# SETUP
+# ===========================================================
+N = 600
+x = np.linspace(0, 2*np.pi, N)
+dx = x[1] - x[0]
+dt = 0.001
+steps = 800
+
+Gamma = 0.02   # MBT-5 curvature strength 
+
+# ===========================================================
+# Initial condition: DOUBLE SHOCK
+# ===========================================================
+u0 = np.zeros_like(x)
+u0[x < np.pi/3] = 1.0
+u0[(x >= np.pi/3) & (x < 2*np.pi/3)] = 0.0
+u0[(x >= 2*np.pi/3) & (x < np.pi)] = 1.0
+u0[(x >= np.pi)] = 0.0
+
+u_base = u0.copy()
+u_mbt  = u0.copy()
+
+# ===========================================================
+# Derivatives
+# ===========================================================
+def dudx(u):
+    du = np.zeros_like(u)
+    du[1:-1] = (u[2:] - u[:-2]) / (2*dx)
+    du[0] = (u[1]-u[0]) / dx
+    du[-1] = (u[-1]-u[-2]) / dx
+    return du
+
+def d2udx2(u):
+    d2 = np.zeros_like(u)
+    d2[1:-1] = (u[2:] - 2*u[1:-1] + u[:-2]) / (dx*dx)
+    d2[0] = (u[1] - 2*u[0] + u[0]) / (dx*dx)
+    d2[-1] = (u[-1] - 2*u[-1] + u[-2]) / (dx*dx)
+    return d2
+
+# ===========================================================
+# TIME INTEGRATION
+# ===========================================================
+for n in range(steps):
+    du_b  = dudx(u_base)
+    du_m  = dudx(u_mbt)
+    d2u_m = d2udx2(u_mbt)
+
+    # baseline Burgers (blows up)
+    u_base = u_base - dt*(u_base * du_b)
+
+    # MBT-5 curvature diffusion
+    u_mbt = u_mbt - dt*(u_mbt * du_m) + dt*(Gamma * d2u_m)
+
+    if n % 200 == 0:
+        print(f"step {n}/{steps}")
+
+# ===========================================================
+# PLOT RESULT
+# ===========================================================
+plt.figure(figsize=(12,5))
+plt.plot(x, u0, 'k:', alpha=0.6, label="Initial profile")
+plt.plot(x, u_base, 'r--', label="Baseline Burgers (exploded)")
+plt.plot(x, u_mbt, 'g-', label="MBT-5 curvature‐stabilised")
+plt.title("DOUBLE SHOCK COLLISION — MBT-5 vs baseline")
+plt.xlabel("x")
+plt.ylabel("u(x)")
+plt.legend()
+plt.grid(alpha=0.3)
+plt.show()
